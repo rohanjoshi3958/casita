@@ -81,6 +81,18 @@ measuring.
   cases; conflict ordering by `llm_rank`
 - `tests/test_demo.py` — render includes dog chips, `data-dog`, and filter JS
 
+## When you'd use the report
+
+| Situation | What you do |
+| --- | --- |
+| **Before a review session** | Run `dog-gate`, see if the residue is mostly `small_only` or `unknown`, then open that Dogs chip on the site and work that set first |
+| **After `enrich` / re-rank** | Diff the vibe: did Gemini get stricter on pets, or are mid-pack `small_only` rows still showing up? |
+| **Chasing unknowns** | Filter the report (or the site) to unknown policy — those have no dog badge, so they're easy to mistake for fine while scrolling **Any** |
+| **Prompt / classify tweaks** | Change `_RANK_SYSTEM` or `dogs.classify`, re-enrich or re-run tests, then `dog-gate` again as a cheap before/after on the fixture |
+| **Sharing the page** | Quick sanity check before you send someone the static site: “are we still featuring places our dogs can’t have?” |
+| **Interview / writeup receipts** | Point at concrete keys (e.g. `#14 small_only`) instead of arguing in the abstract |
+
+You would **not** use it to pick a winner or replace browsing — chips do the looking; the report is the checklist.
 
 ## How to use it
 
