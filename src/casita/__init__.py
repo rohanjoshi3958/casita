@@ -11,7 +11,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from . import craigslist, dedup, html, llm, redfin, storage, walk, zillow, zumper
+from . import craigslist, dedup, dogs, html, llm, redfin, storage, walk, zillow, zumper
 from .browser import context
 from .models import Listing
 from .rank import rank, score
@@ -1372,6 +1372,68 @@ def analyze_prefs(local: bool):
     console.print(
         "\n[dim]proposes only — hand-edit _RANK_SYSTEM in src/casita/llm.py "
         "and commit the reconciled policy.[/dim]"
+    )
+
+
+@cli.command(name="dog-gate")
+@click.option("--local", is_flag=True, help="Skip GCS sync; operate on the local DB only.")
+def dog_gate(local: bool):
+    """List rankings that look usable but fail the large-dog gate.
+
+    Read-only audit: severity/rank optimism vs dog_policy of small_only,
+    no_dogs, or unknown. Does not change the DB or the static site — use the
+    Dogs chips on the landing page to hide these while reviewing.
+    """
+    with _cloud_or_local(local, read_only=True):
+        with storage.connect() as conn:
+            listings = storage.active_listings(conn)
+            conflicts = dogs.find_gate_conflicts(listings)
+
+    if not listings:
+        console.print("[red]no listings in DB — run `casita search` or `casita demo` first[/red]")
+        return
+
+    db_hint = os.environ.get("CASITA_DB_PATH") or "default local DB"
+    console.print()
+    console.print(f"[bold]casita dog-gate[/bold]  ·  {db_hint}")
+    console.print("[dim]Large-dog gate vs ranking — read-only[/dim]")
+    console.print()
+
+    if not conflicts:
+        console.print("[green]no gate conflicts — ranking and dog_policy agree enough.[/green]")
+        return
+
+    counts: dict[str, int] = {}
+    for c in conflicts:
+        counts[c.dog_label] = counts.get(c.dog_label, 0) + 1
+
+    for c in conflicts:
+        L = c.listing
+        rank_s = f"#{L.llm_rank}" if L.llm_rank is not None else "—"
+        sev = L.llm_severity or "—"
+        price = f"${L.price:,}" if L.price else "?"
+        hood = L.hood or "?"
+        title = (L.title or L.address or L.key)[:64]
+        body = (
+            f"[cyan]{L.key}[/cyan]\n"
+            f"{hood} · {price} · {title}\n"
+            f"[dim]Gemini:[/dim] {L.llm_reason or '—'}\n"
+            f"[yellow]Why:[/yellow]   {c.why}"
+        )
+        console.print(Panel(
+            body,
+            title=(
+                f"[bold]{rank_s}[/bold]  {c.dog_label}  ·  {sev}  ·  "
+                f"heuristic {c.heuristic_score}"
+            ),
+            border_style="yellow",
+            padding=(0, 1),
+        ))
+
+    summary = " · ".join(f"{n} {label}" for label, n in sorted(counts.items()))
+    console.print(
+        f"\n[bold]{len(conflicts)}[/bold] flagged  ·  {summary}\n"
+        "[dim]Use Dogs chips on the site to hide these while reviewing.[/dim]"
     )
 
 
