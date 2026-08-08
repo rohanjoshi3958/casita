@@ -96,6 +96,38 @@ def test_index_open_graph_urls_are_escaped(monkeypatch):
     assert 'content="https://example.test/&quot;bad/og/index.png"' in rendered
 
 
+def test_index_renders_dog_policy_filter_chips():
+    rendered = html.render(
+        [
+            Listing(
+                source="manual",
+                source_id="dogs-ok",
+                url="",
+                title="Dogs OK place",
+                dog_policy="dogs_ok",
+                llm_severity="ok",
+            ),
+            Listing(
+                source="manual",
+                source_id="unknown-dogs",
+                url="",
+                title="Unknown dogs place",
+                dog_policy=None,
+                llm_severity="concerns",
+            ),
+        ],
+        run={"started_at": "2026-01-01T00:00:00", "finished_at": "2026-01-01T00:00:00"},
+    )
+
+    assert 'aria-label="Filter by dog policy"' in rendered
+    assert 'class="dog-chip" data-dog="large_ok"' in rendered
+    assert 'class="dog-chip" data-dog="unknown"' in rendered
+    assert 'data-dog="dogs_ok"' in rendered
+    assert 'data-dog="unknown"' in rendered
+    assert "var dogChips" in rendered
+    assert "activeDog" in rendered
+
+
 def test_demo_clean_url_path_resolves_listing_html(tmp_path):
     listing = tmp_path / "listing" / "sample-listing.html"
     listing.parent.mkdir()

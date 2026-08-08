@@ -129,6 +129,7 @@ SEARCH_JS = """<script>
   var input = document.getElementById('q');
   var countEl = document.getElementById('search-count');
   var chips = Array.from(document.querySelectorAll('.since-chip'));
+  var dogChips = Array.from(document.querySelectorAll('.dog-chip'));
   var dateInput = document.getElementById('since-date');
   if (!input) return;
   var cards = Array.from(document.querySelectorAll('.card'));
@@ -142,6 +143,10 @@ SEARCH_JS = """<script>
   // the chip highlight stable across repaints / midnight rollover.
   var sinceCutoff = '';
   var activeDays = '';
+  // Dog policy chip: 'any' shows all; otherwise match card data-dog exactly
+  // (including 'unknown' for listings with no classified policy).
+  var activeDog = 'any';
+  var DOG_VALUES = { any: 1, large_ok: 1, dogs_ok: 1, small_only: 1, no_dogs: 1, unknown: 1 };
   var DATE_RE = /^\\d{4}-\\d{2}-\\d{2}$/;
 
   function daysAgoISO(n) {
@@ -154,6 +159,7 @@ SEARCH_JS = """<script>
     var parts = [];
     if (q) parts.push('q=' + encodeURIComponent(q));
     if (sinceCutoff) parts.push('since=' + sinceCutoff);
+    if (activeDog && activeDog !== 'any') parts.push('dog=' + encodeURIComponent(activeDog));
     var hash = parts.length ? '#' + parts.join('&') : '';
     if (location.hash !== hash) {
       history.replaceState(null, '', location.pathname + location.search + hash);
@@ -170,7 +176,9 @@ SEARCH_JS = """<script>
       var added = c.dataset.added || '';
       // No cutoff → show all; with a cutoff, an unknown date is treated as old.
       var dateMatch = !sinceCutoff || (added && added >= sinceCutoff);
-      var match = textMatch && dateMatch;
+      var dog = c.dataset.dog || 'unknown';
+      var dogMatch = activeDog === 'any' || dog === activeDog;
+      var match = textMatch && dateMatch && dogMatch;
       c.style.display = match ? '' : 'none';
       if (match) shown++;
     });
@@ -183,6 +191,9 @@ SEARCH_JS = """<script>
   function paintControls() {
     chips.forEach(function(ch) {
       ch.setAttribute('aria-pressed', (activeDays !== null && ch.dataset.days === activeDays) ? 'true' : 'false');
+    });
+    dogChips.forEach(function(ch) {
+      ch.setAttribute('aria-pressed', ch.dataset.dog === activeDog ? 'true' : 'false');
     });
     if (dateInput) {
       var custom = activeDays === null && !!sinceCutoff;
@@ -200,6 +211,13 @@ SEARCH_JS = """<script>
       apply();
     });
   });
+  dogChips.forEach(function(ch) {
+    ch.addEventListener('click', function() {
+      activeDog = ch.dataset.dog || 'any';
+      paintControls();
+      apply();
+    });
+  });
   if (dateInput) {
     dateInput.addEventListener('change', function() {
       var v = dateInput.value || '';
@@ -212,7 +230,7 @@ SEARCH_JS = """<script>
 
   input.addEventListener('input', apply);
 
-  // Restore both filters from the URL hash on load (#q=...&since=YYYY-MM-DD).
+  // Restore filters from the URL hash on load (#q=...&since=YYYY-MM-DD&dog=...).
   var raw = location.hash.replace(/^#/, '');
   raw.split('&').forEach(function(pair) {
     var kv = pair.split('=');
@@ -220,6 +238,10 @@ SEARCH_JS = """<script>
     if (kv[0] === 'since' && kv[1]) {
       var v = decodeURIComponent(kv[1]);
       if (DATE_RE.test(v)) sinceCutoff = v;  // ignore malformed cutoffs
+    }
+    if (kv[0] === 'dog' && kv[1]) {
+      var dog = decodeURIComponent(kv[1]);
+      if (DOG_VALUES[dog]) activeDog = dog;
     }
   });
   // A restored cutoff is treated as a custom date unless it matches a preset.
@@ -626,23 +648,23 @@ h1 {
   width: 100%; padding: 0;
 }
 .search-box input::placeholder { color: var(--ink-3); }
-/* "Added since" filter — chip row + custom date, matches the search bar */
-.since-filter {
+/* "Added since" / dog-policy filters — chip rows match the search bar */
+.since-filter, .dog-filter {
   display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
   margin-top: 12px;
 }
-.since-label {
+.since-label, .dog-label {
   color: var(--ink-3); font-size: 11px; font-weight: 600;
   letter-spacing: 0.08em; text-transform: uppercase; margin-right: 2px;
 }
-.since-chip {
+.since-chip, .dog-chip {
   font-family: inherit; font-size: 13px; font-weight: 500;
   color: var(--ink-2); background: var(--card); cursor: pointer;
   border: 1px solid var(--line); border-radius: 999px; padding: 5px 13px;
   transition: color .12s, background .12s, border-color .12s;
 }
-.since-chip:hover { color: var(--ink); border-color: var(--ink-3); }
-.since-chip[aria-pressed="true"] {
+.since-chip:hover, .dog-chip:hover { color: var(--ink); border-color: var(--ink-3); }
+.since-chip[aria-pressed="true"], .dog-chip[aria-pressed="true"] {
   color: #fff; background: var(--accent); border-color: transparent;
 }
 .since-date {
@@ -1539,8 +1561,10 @@ def _card(L: Listing, walk_map: dict | None = None, convo: dict | None = None,
             f'<div class="card-fallback-title">{_esc(L.title or L.address or "View listing")}</div>'
         )
 
+    dog_attr = L.dog_policy or "unknown"
+
     return f"""
-<article class="card {sev_class}{elim_class}{feature_class}" data-search="{haystack}" data-added="{added_date}" data-key="{_esc(L.key)}">
+<article class="card {sev_class}{elim_class}{feature_class}" data-search="{haystack}" data-added="{added_date}" data-dog="{_esc(dog_attr)}" data-key="{_esc(L.key)}">
   {elim_banner_html}
   <div class="feature-media">{img_html}</div>
   <a class="card-body-link" href="{detail_href}">
@@ -1558,66 +1582,6 @@ def _card(L: Listing, walk_map: dict | None = None, convo: dict | None = None,
     </div>
   </a>
 </article>
-"""
-
-
-_FILTER_JS = """
-(function() {
-  const grid = document.querySelector('main.grid');
-  const cards = Array.from(grid.querySelectorAll('.card'));
-  const countEl = document.getElementById('count');
-  const dogChips = Array.from(document.querySelectorAll('.chip[data-filter="dog"]'));
-  const walkAnchor = document.getElementById('walk-anchor');
-  const walkChips = Array.from(document.querySelectorAll('.chip[data-filter="walk"]'));
-
-  function setDogState(value) {
-    dogChips.forEach(c => c.setAttribute('aria-pressed', c.dataset.value === value ? 'true' : 'false'));
-    applyFilters();
-  }
-  function setWalkState(value) {
-    walkChips.forEach(c => c.setAttribute('aria-pressed', c.dataset.value === value ? 'true' : 'false'));
-    applyFilters();
-  }
-  dogChips.forEach(c => c.addEventListener('click', () => setDogState(c.dataset.value)));
-  walkChips.forEach(c => c.addEventListener('click', () => setWalkState(c.dataset.value)));
-  walkAnchor.addEventListener('change', applyFilters);
-
-  function activeDog() {
-    const p = dogChips.find(c => c.getAttribute('aria-pressed') === 'true');
-    return p ? p.dataset.value : 'any';
-  }
-  function activeWalkMax() {
-    const p = walkChips.find(c => c.getAttribute('aria-pressed') === 'true');
-    return p ? parseInt(p.dataset.value, 10) : Infinity;
-  }
-
-  function applyFilters() {
-    const dog = activeDog();
-    const anchor = walkAnchor.value;     // 'beach' | 'arsicault' | 'arizmendi'
-    const maxMin = activeWalkMax();
-    let shown = 0;
-    cards.forEach(card => {
-      const dogOk = dog === 'any' || card.dataset.dog === dog;
-      const mins = parseInt(card.dataset[anchor] || '999', 10);
-      const walkOk = !isFinite(maxMin) || mins <= maxMin;
-      const visible = dogOk && walkOk;
-      card.style.display = visible ? '' : 'none';
-      if (visible) shown++;
-    });
-    countEl.textContent = shown;
-    let empty = grid.querySelector('.empty');
-    if (shown === 0) {
-      if (!empty) {
-        empty = document.createElement('div');
-        empty.className = 'empty';
-        empty.textContent = 'No listings match these filters.';
-        grid.appendChild(empty);
-      }
-    } else if (empty) {
-      empty.remove();
-    }
-  }
-})();
 """
 
 
@@ -1743,6 +1707,15 @@ def render(
       <button type="button" class="since-chip" data-days="3" aria-pressed="false">3 days</button>
       <button type="button" class="since-chip" data-days="7" aria-pressed="false">7 days</button>
       <input type="date" id="since-date" class="since-date" aria-label="Added on or after this date">
+    </div>
+    <div class="dog-filter" role="group" aria-label="Filter by dog policy">
+      <span class="dog-label">Dogs</span>
+      <button type="button" class="dog-chip" data-dog="any" aria-pressed="true">Any</button>
+      <button type="button" class="dog-chip" data-dog="large_ok" aria-pressed="false">Large OK</button>
+      <button type="button" class="dog-chip" data-dog="dogs_ok" aria-pressed="false">Dogs OK</button>
+      <button type="button" class="dog-chip" data-dog="small_only" aria-pressed="false">Small only</button>
+      <button type="button" class="dog-chip" data-dog="no_dogs" aria-pressed="false">No dogs</button>
+      <button type="button" class="dog-chip" data-dog="unknown" aria-pressed="false">Unknown</button>
     </div>
     <div class="search-meta"><span id="search-count">{count}</span> of {count} shown · refreshed {ts}</div>
   </div>
