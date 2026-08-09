@@ -99,15 +99,3 @@ leakage. Chips remain for inspecting those sets on purpose.
   non-flag including past-band `small_only`; conflict ordering
 - `tests/test_demo.py` — render includes dog chips, `data-dog`, and filter JS
 
-## Why this choice
-
-The invitation keeps large dogs, walkability, drive times, trails, and
-bakeries as the product. I took the assumption that is both a hard gate and
-under-instrumented in the review loop.
-
-Three surfaces, one constraint:
-
-1. **Chips** — make the gate operable while reviewing
-2. **Report** — make ranking’s softness on that gate measurable
-3. **Rank order** — enforce the rule the prompt already stated, with the
-   report as before/after proof
