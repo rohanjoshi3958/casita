@@ -130,7 +130,15 @@ def rank(
     track of past leads. An eliminated listing stays down even if it was once
     up-voted or in the pipeline — the explicit pass is the newer, stronger
     signal. Within each bucket, ties break on heuristic score.
+
+    Before sorting, llm_rank is adjusted so dogs_ok/large_ok outrank unknown,
+    which outranks small_only — Gemini's relative order is kept inside each
+    tier. That makes the prompt's "small_only must not outrank dogs_ok" rule
+    hold even when the model leaves negotiate-rows mid-pack.
     """
+    from . import dogs
+
+    dogs.apply_large_dog_rank_order(listings)
     status_map = status_map or {}
     vote_scores = vote_scores or {}
     def sort_key(L: Listing) -> tuple:

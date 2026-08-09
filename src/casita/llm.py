@@ -248,9 +248,12 @@ _RANK_SYSTEM = textwrap.dedent("""
             MUST start with "Small dogs only — would need to negotiate"
             because the badge says SMALL DOGS ONLY and the rank reason has
             to match the badge. Never describe these as "dog-friendly".
-            They should not outrank a comparable dogs_ok / large_ok listing.
+            Rank EVERY small_only listing after EVERY dogs_ok / large_ok
+            listing (ok or concerns) — never interleaved above them.
           - **dogs_ok / large_ok** → eligible for severity="ok".
           - **null/unknown** → severity="concerns", flag the verification need.
+            Rank unknowns after every dogs_ok / large_ok listing, and before
+            small_only.
       • For Marin listings: a private yard is strongly preferred
         (fenced backyard, side yard, or private patio with grass). NEVER
         hard-filter a Marin listing for yard alone — treat missing/
