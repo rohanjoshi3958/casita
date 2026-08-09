@@ -86,9 +86,61 @@ LABELS: dict[DogPolicy, str] = {
 }
 
 
-# How far down Gemini's list we still treat "unknown" as worth auditing.
-# Past this, unknown+concerns is noise for a review pass.
-_UNKNOWN_RANK_CUTOFF = 50
+# How far down the (dog-policy-adjusted) list we still treat weak pet rows
+# as mid-band residue worth auditing. Past this, they're noise for a review pass.
+_REVIEW_BAND_CUTOFF = 50
+
+
+def dog_rank_tier(policy: DogPolicy | None) -> int:
+    """Sort tier for large-dog households — lower is better.
+
+    dogs_ok / large_ok → unknown → small_only → no_dogs.
+    Enforces the prompt rule that small_only must not outrank a comparable
+    dogs_ok / large_ok listing.
+    """
+    if policy in ("large_ok", "dogs_ok"):
+        return 0
+    if policy == "small_only":
+        return 2
+    if policy == "no_dogs":
+        return 3
+    return 1  # unknown / unclassified
+
+
+def apply_large_dog_rank_order(listings: list[Listing]) -> int:
+    """Renumber llm_rank so weaker dog policies cannot sit above stronger ones.
+
+    Among severity ok/concerns, preserve Gemini's relative order inside each
+    dog_rank_tier, then assign 1..N. Ordinary filtered rows are renumbered
+    after that block (relative order kept). Sentinel ranks (>= 9000) stay put.
+    Idempotent. Returns how many listings changed rank.
+    """
+    open_ = [
+        L for L in listings
+        if L.llm_severity in ("ok", "concerns") and L.llm_rank is not None
+    ]
+    filtered = [
+        L for L in listings
+        if L.llm_rank is not None
+        and (L.llm_severity == "filtered" or (L.llm_rank or 0) >= 9000)
+    ]
+
+    open_.sort(key=lambda L: (dog_rank_tier(L.dog_policy), L.llm_rank or 0, L.key))
+    changed = 0
+    for i, L in enumerate(open_, start=1):
+        if L.llm_rank != i:
+            changed += 1
+        L.llm_rank = i
+
+    normal_filtered = [L for L in filtered if (L.llm_rank or 0) < 9000]
+    normal_filtered.sort(key=lambda L: (L.llm_rank or 0, L.key))
+    base = len(open_)
+    for j, L in enumerate(normal_filtered, start=1):
+        new = base + j
+        if L.llm_rank != new:
+            changed += 1
+        L.llm_rank = new
+    return changed
 
 
 @dataclass(frozen=True)
@@ -107,12 +159,12 @@ class GateConflict:
 def gate_conflict_why(listing: Listing) -> str | None:
     """Return a short flag reason, or None if the gate and ranker agree enough.
 
-    Flags (large-dog household):
+    Flags (large-dog household), after apply_large_dog_rank_order:
       • no_dogs with severity ok/concerns — prompt says filtered
       • small_only with severity ok — prompt says never ok
-      • small_only with severity concerns — still mid-feed, needs negotiation
+      • small_only with concerns still in the review band (rank <= cutoff)
       • unknown with severity ok — optimistic without a classified policy
-      • unknown with concerns and llm_rank <= cutoff — still in the review band
+      • unknown with concerns still in the review band
     """
     policy = listing.dog_policy
     severity = listing.llm_severity
@@ -129,14 +181,22 @@ def gate_conflict_why(listing: Listing) -> str | None:
     if policy == "small_only":
         if severity == "ok":
             return "severity=ok but small_only (large dogs need negotiation)"
-        if severity == "concerns":
+        if (
+            severity == "concerns"
+            and rank is not None
+            and rank <= _REVIEW_BAND_CUTOFF
+        ):
             return "still ranked with small_only — large dogs need negotiation"
         return None
 
     # Unknown / unclassified
     if severity == "ok":
         return "Gemini ok but dog policy unknown"
-    if severity == "concerns" and rank is not None and rank <= _UNKNOWN_RANK_CUTOFF:
+    if (
+        severity == "concerns"
+        and rank is not None
+        and rank <= _REVIEW_BAND_CUTOFF
+    ):
         return "ranked with unknown dog policy"
     return None
 
@@ -144,8 +204,17 @@ def gate_conflict_why(listing: Listing) -> str | None:
 def find_gate_conflicts(
     listings: list[Listing],
     walk_map: dict | None = None,
+    *,
+    apply_order: bool = True,
 ) -> list[GateConflict]:
-    """List gate conflicts, best Gemini rank first."""
+    """List gate conflicts, best rank first.
+
+    By default applies the same large-dog rank order the review site uses, so
+    the audit measures residue after the deterministic correction — not only
+    raw Gemini placement.
+    """
+    if apply_order:
+        apply_large_dog_rank_order(listings)
     out: list[GateConflict] = []
     for listing in listings:
         why = gate_conflict_why(listing)

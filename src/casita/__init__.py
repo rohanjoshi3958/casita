@@ -576,6 +576,24 @@ def _enrich_impl(force: bool):
         console.print("[bold]gemini ranking…[/bold]")
         ranks = llm.rank_listings(listings, walk_map, conn)
 
+        # Stamp Gemini output onto listings, then enforce large-dog tier order
+        # (dogs_ok/large_ok → unknown → small_only) before persisting.
+        for L in listings:
+            if L.key in ranks:
+                rk, reason, severity = ranks[L.key]
+                L.llm_rank = rk
+                L.llm_reason = reason
+                L.llm_severity = severity
+            else:
+                L.llm_rank = 9999
+                L.llm_reason = "not returned by ranker"
+                L.llm_severity = "filtered"
+        moved = dogs.apply_large_dog_rank_order(listings)
+        if moved:
+            console.print(
+                f"[dim]large-dog rank order:[/dim] adjusted {moved} listing ranks"
+            )
+
         # 3a) Share-card blurbs — one per listing. Uses the post-rank state
         # (so the blurb can reference llm_reason / severity) and persists.
         # Skipped for listings that already have a blurb unless --force.
@@ -585,10 +603,6 @@ def _enrich_impl(force: bool):
         if blurb_targets:
             console.print(f"[bold]gemini share blurbs:[/bold] {len(blurb_targets)} listings")
             for L in blurb_targets:
-                # Refresh from ranks dict in case we just ranked.
-                if L.key in ranks:
-                    L.llm_reason = ranks[L.key][1]
-                    L.llm_severity = ranks[L.key][2]
                 try:
                     blurb = llm.generate_share_blurb(L)
                     if blurb:
@@ -601,22 +615,16 @@ def _enrich_impl(force: bool):
                 except Exception as e:
                     print(f"  share blurb err [{L.key}]: {e}")
 
-        for key, (rk, reason, severity) in ranks.items():
+        for L in listings:
             conn.execute(
                 "UPDATE listings SET llm_rank=?, llm_reason=?, llm_severity=? WHERE key=?",
-                (rk, reason, severity, key),
+                (L.llm_rank, L.llm_reason, L.llm_severity, L.key),
             )
-        # Listings the LLM didn't return (rare — the prompt asks for ALL).
-        for L in listings:
-            if L.key not in ranks:
-                conn.execute(
-                    "UPDATE listings SET llm_rank=?, llm_reason=?, llm_severity=? WHERE key=?",
-                    (9999, "not returned by ranker", "filtered", L.key),
-                )
         conn.commit()
         counts = {"ok": 0, "concerns": 0, "filtered": 0}
-        for _, _, sev in ranks.values():
-            counts[sev] = counts.get(sev, 0) + 1
+        for L in listings:
+            if L.llm_severity in counts:
+                counts[L.llm_severity] += 1
         console.print(f"[green]ranked:[/green] ok={counts['ok']} concerns={counts['concerns']} filtered={counts['filtered']}")
 
 
@@ -1380,9 +1388,9 @@ def analyze_prefs(local: bool):
 def dog_gate(local: bool):
     """List rankings that look usable but fail the large-dog gate.
 
-    Read-only audit: severity/rank optimism vs dog_policy of small_only,
-    no_dogs, or unknown. Does not change the DB or the static site — use the
-    Dogs chips on the landing page to hide these while reviewing.
+    Applies the same large-dog rank order as the review site, then reports
+    residue: severity/rank optimism vs dog_policy of small_only, no_dogs, or
+    unknown. Read-only on the DB — use Dogs chips to hide rows while reviewing.
     """
     with _cloud_or_local(local, read_only=True):
         with storage.connect() as conn:
@@ -1396,7 +1404,7 @@ def dog_gate(local: bool):
     db_hint = os.environ.get("CASITA_DB_PATH") or "default local DB"
     console.print()
     console.print(f"[bold]casita dog-gate[/bold]  ·  {db_hint}")
-    console.print("[dim]Large-dog gate vs ranking — read-only[/dim]")
+    console.print("[dim]Large-dog gate vs ranking — after dog-policy rank order[/dim]")
     console.print()
 
     if not conflicts:

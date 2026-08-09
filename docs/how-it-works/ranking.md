@@ -21,8 +21,17 @@ asks Gemini to return every listing with:
 The ranking policy keeps the personal assumptions: large dogs, SF walkability,
 Marin drive context, trail or beach access, and practical livability.
 
+After Gemini returns (and again when sorting for the review site),
+`dogs.apply_large_dog_rank_order` renumbers ranks among `ok` / `concerns`
+listings so `dogs_ok` / `large_ok` always sit above unknown, which sits above
+`small_only`. Relative model order is kept inside each tier. That makes the
+prompt’s “small_only must not outrank dogs_ok” rule hold even when the model
+leaves negotiate-rows mid-pack. `casita dog-gate` audits residue after the
+same correction.
+
 ## Ways This Could Go Further
 
 Ranking is deliberately still prompt-centric and Vertex-only. A future version
-could make policy changes easier to evaluate, compare deterministic and LLM
-rank movement, or support another model backend.
+could make policy changes easier to evaluate more broadly, compare
+deterministic and LLM rank movement beyond the dog gate, or support another
+model backend.
