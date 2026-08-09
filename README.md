@@ -13,6 +13,19 @@ This is not a product or service. It is published as-is, under MIT, as a
 personal-use codebase for an interview loop. The interesting part is what a
 candidate chooses to improve.
 
+## Why I chose this (fork note)
+
+Casita already classifies dog policy and ranks with Gemini — but on the demo
+fixture, **13** listings still sit in the review band when pets are weak for a
+two-large-dog household (**9** `small_only` as `concerns`, **4** unknown with
+no badge). The hard gate was encoded; the review loop did not make it operable
+or auditable.
+
+This fork adds Dogs filter chips on the index and a read-only
+`casita dog-gate` report. Ranking is intentionally unchanged: measure softness
+on the gate before guessing at a score tweak. Full writeup, fixture numbers,
+and decisions: [`CHANGES.md`](CHANGES.md).
+
 ## Demo
 
 The demo is credentials-free and uses a sanitized SQLite fixture with cached
