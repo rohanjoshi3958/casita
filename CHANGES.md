@@ -2,38 +2,38 @@
 
 ## The failure
 
-On the committed demo fixture there are **143** active listings. Gemini's hard
-pet gate mostly holds: all **31** `no_dogs` rows are `filtered`. What leaks
-into the review band is softer:
+Casita’s hard product rule is two large dogs. That rule already lives in
+`dog_policy`, Gemini severity/rank, and heuristic `score()` — but the review
+loop never made it operable, and nothing audited when ranking stayed soft on
+it.
 
-| Residue | Count | What a reviewer sees without help |
+On a fully enriched, ranked listing set the pet gate mostly holds where it is
+explicit: `no_dogs` rows land as `filtered`. What still leaks into the review
+band is softer:
+
+| Residue | Count (example DB) | What a reviewer sees without help |
 | --- | --- | --- |
-| `small_only` still ranked `concerns` | **9** | Mid-feed (#14–#24). Gemini already says “negotiate” — the sort still surfaces them. |
+| `small_only` still ranked `concerns` | **9** | Mid-feed. Gemini already says “negotiate” — the sort still surfaces them. |
 | `unknown` still in the review band | **4** of **52** unknowns | No dog badge on the card. On **Any**, easy to mistake for fine. |
-| **`dog-gate` total** | **13** | Ranked like they’re still in play for a two-large-dog household. |
+| **`dog-gate` total** | **13** of **143** active | Ranked like they’re still in play for a two-large-dog household. |
 
 Nothing in the shipped UI asked, before a session: *which listings are still
 “in play” even though pets probably don’t work for us?* Dog filtering had been
-sketched in JS and then abandoned. The hard constraint lived in three systems
-(`dog_policy`, Gemini severity/rank, heuristic `score()`) and the reviewer got
-a badge plus a sorted feed.
+sketched in JS and then abandoned. The reviewer got a badge plus a sorted feed.
 
 ## Why this, not something else
 
-Large dogs are the invitation’s hard gate. Walk times, Marin drives, trails,
-and bakeries are preferences. I wanted the place where the system is
-*confidently soft* on a hard rule — not a documented rough edge from the docs
-to-do list.
+Large dogs are the hard gate. Walk times, drives, trails, and bakeries are
+preferences. I wanted the place where the system is *confidently soft* on a
+hard rule — not a documented rough edge from a docs to-do list.
 
 I considered tightening `score()` or the ranking prompt so `small_only` /
 unknown drop out of the mid-pack. I left ranking alone for this change:
 
-- On this fixture the prompt already refuses `ok` for hard pet failures.
-- A heavier heuristic penalty would reshuffle rows I have not proven are
-  wrong in the same direction — Bryce’s “show it, don’t score it” logic
-  applies here too.
-- Without a read-only audit, “I made pets stricter” is a vibe, not a
-  before/after.
+- Where policy is a hard no, the prompt already tends to refuse severity `ok`.
+- A heavier heuristic penalty would reshuffle rows without a measured
+  before/after — show the conflict first, don’t hardcode a bias.
+- Without a read-only audit, “I made pets stricter” is a vibe, not evidence.
 
 So the work is **make the gate operable** and **make softness measurable**.
 Re-ranking can come later, against `dog-gate` as the meter.
@@ -61,8 +61,8 @@ owns card show/hide.
 
 ### 2. `casita dog-gate` — read-only integrity report
 
-Credentials-free. Lists active listings where ranking still looks usable but
-the large-dog gate is weak or hostile:
+Lists active listings where ranking still looks usable but the large-dog gate
+is weak or hostile:
 
 | Flagged when | Meaning |
 | --- | --- |
@@ -72,12 +72,13 @@ the large-dog gate is weak or hostile:
 | unknown + `concerns` + rank ≤ 50 | Still in the review band with no pet badge |
 
 It does **not** re-rank, edit SQLite, or change the static site. Chips are how
-you browse; the report is how you audit.
+you browse; the report is how you audit. Works against whatever DB the CLI is
+pointed at (local or synced).
 
-Fixture run (abridged):
+Example run (abridged):
 
 ```text
-casita dog-gate  ·  fixtures/demo.sqlite
+casita dog-gate
 Large-dog gate vs ranking — read-only
 
 #14  small_only  ·  concerns  ·  heuristic -15
@@ -92,8 +93,8 @@ Large-dog gate vs ranking — read-only
 13 flagged  ·  9 small_only · 4 unknown
 ```
 
-That split is the point: the interesting failure mode is not “Gemini said pets
-are fine on a no-dogs building.” It is **small_only kept mid-pack as
+That split is the point: the interesting failure mode is not “severity said
+pets are fine on a no-dogs building.” It is **small_only kept mid-pack as
 `concerns`**, plus **unknowns still sitting in the review band**.
 
 ### 3. Tests
@@ -108,8 +109,8 @@ are fine on a no-dogs building.” It is **small_only kept mid-pack as
 | --- | --- | --- |
 | Dog policy chips | **Built** | Hard gate was not operable in the review UI; abandoned filter JS was the hint. |
 | Keep `large_ok` ≠ `dogs_ok` | **Kept split** | Different household decisions; collapsing hides enrichment’s work. |
-| `casita dog-gate` | **Built** | Need a credentials-free way to list soft-ranking vs gate conflicts. |
-| Penalize pets harder in `score()` / prompt | **Deferred** | Measure first; fixture shows prompt mostly holds — residue is `concerns` + unknown. |
+| `casita dog-gate` | **Built** | Need a way to list soft-ranking vs gate conflicts before or beside a review pass. |
+| Penalize pets harder in `score()` / prompt | **Deferred** | Measure first; residue is mid-pack `concerns` + unknown, not failed hard filters. |
 | Auto-hide hostile pets from the index | **Rejected** | Hiding is a product call. Chips let you choose; the report shows leakage. |
 | Extra banners on every card | **Rejected** | Badge + fit already speak; missing piece was filter + audit. |
 | Revive dead walk-filter JS | **Deleted** | Wrong selectors; would fight search `display`. |
@@ -119,9 +120,9 @@ are fine on a no-dogs building.” It is **small_only kept mid-pack as
 | Situation | What you do |
 | --- | --- |
 | **Before a review session** | Run `dog-gate`, see if residue is mostly `small_only` or `unknown`, open that Dogs chip, work that set first |
-| **After `enrich` / re-rank** | Before/after on the same DB: did Gemini get stricter, or are mid-pack `small_only` rows still there? |
+| **After `enrich` / re-rank** | Before/after on the same DB: did severity get stricter, or are mid-pack `small_only` rows still there? |
 | **Chasing unknowns** | Unknown has no dog badge — easy to miss on **Any**; chip or report on purpose |
-| **Prompt / classify tweaks** | Change `_RANK_SYSTEM` or `dogs.classify`, then `dog-gate` as a cheap meter on the fixture |
+| **Prompt / classify tweaks** | Change `_RANK_SYSTEM` or `dogs.classify`, then `dog-gate` as a cheap meter |
 | **Sharing the page** | Sanity check: are we still featuring places our dogs can’t have? |
 
 You would **not** use it to pick a winner or replace browsing — chips do the
@@ -130,21 +131,21 @@ looking; the report is the checklist.
 ## How to use it
 
 ```bash
-# Review UI
-uv run casita demo
-# → http://127.0.0.1:8765/  ·  Dogs chips
+# Audit the active DB (add --local to skip cloud sync)
+uv run casita dog-gate --local
 
-# Audit before / beside a session
-CASITA_DB_PATH=fixtures/demo.sqlite CASITA_ROUTES_OFFLINE=1 \
+# Optional: point at a specific SQLite file
+CASITA_DB_PATH=/path/to/listings.sqlite CASITA_ROUTES_OFFLINE=1 \
   uv run casita dog-gate --local
 ```
 
+On the static review site, use the Dogs chips the same way as the date filter.
 Workflow: `dog-gate` → note `small_only` vs `unknown` → open that chip → review
 that set on purpose. Report = homework list; chips = view.
 
 ## Why this choice
 
-The invitation keeps large dogs, SF walkability, Marin drives, trails, and
+The invitation keeps large dogs, walkability, drive times, trails, and
 bakeries as the product. I took the assumption that is both a hard gate and
 under-instrumented in the review loop.
 
