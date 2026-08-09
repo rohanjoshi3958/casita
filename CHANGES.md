@@ -99,34 +99,6 @@ leakage. Chips remain for inspecting those sets on purpose.
   non-flag including past-band `small_only`; conflict ordering
 - `tests/test_demo.py` — render includes dog chips, `data-dog`, and filter JS
 
-## Decisions
-
-| Candidate | Decision | Reason |
-| --- | --- | --- |
-| Dog policy chips | **Built** | Hard gate was not operable in the review UI. |
-| Keep `large_ok` ≠ `dogs_ok` | **Kept split** | Different household decisions. |
-| `casita dog-gate` | **Built** | Measure soft-ranking vs gate before/after. |
-| Deterministic dog-policy rank order | **Built** | Prompt already required it; model left `small_only` mid-pack — enforce in code. |
-| Auto-`filtered` every `small_only` | **Rejected** | Negotiate is real; wrong placement was the bug, not visibility. |
-| Heavier heuristic pet penalty | **Rejected** | Heuristic only tie-breaks; wouldn’t move `#14` vs `#25`. |
-| Extra banners on every card | **Rejected** | Badge + fit already speak. |
-| Revive dead walk-filter JS | **Deleted** | Wrong selectors; would fight search `display`. |
-
-## How to use it
-
-```bash
-# Audit (same order as the review site)
-uv run casita dog-gate --local
-
-# Optional: point at a specific SQLite file
-CASITA_DB_PATH=/path/to/listings.sqlite CASITA_ROUTES_OFFLINE=1 \
-  uv run casita dog-gate --local
-```
-
-On the static review site, use the Dogs chips when you want to inspect
-`small_only` / unknown on purpose. After the rank-order fix they no longer
-crowd the default mid-pack ahead of `dogs_ok`.
-
 ## Why this choice
 
 The invitation keeps large dogs, walkability, drive times, trails, and
